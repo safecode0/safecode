@@ -84,7 +84,7 @@ jobs:
         run: cargo bench -p wasi-runtime --bench runtime_hot_paths -- --noplot
 
       - name: Upload Criterion report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasi-runtime-criterion-report
           path: target/criterion
