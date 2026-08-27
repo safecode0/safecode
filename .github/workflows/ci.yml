@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, "feature/**"]
+    # Skip the full matrix when only docs/planning files change; code still
+    # gets full coverage on every real change.
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+  # Nightly advisory sweep: RustSec advisories are published after our last push.
+  schedule:
+    # Nightly advisory sweep: RustSec advisories can be published any day.
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+# Kill stale runs when a newer push lands on the same branch; a superseded
+# run burning minutes to completion is pure waste.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: fmt + clippy + tests + docs + benches (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Tests
+        run: |
+          cargo test -p wasi-runtime --all-features
+          cargo test --workspace --exclude wasi-runtime --all-features
+
+      - name: Docs (broken links are errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --workspace
+
+      - name: Benchmarks compile
+        run: cargo bench --workspace --no-run
+
+  performance:
+    name: WASI hot-path benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Criterion hot-path benchmarks
+        run: cargo bench -p wasi-runtime --bench runtime_hot_paths -- --noplot
+
+      - name: Upload Criterion report
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasi-runtime-criterion-report
+          path: target/criterion
+          if-no-files-found: error
+
+  licenses:
+    name: license + advisory checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check licenses, advisories, bans, sources
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses advisories bans sources
+
+      - name: Audit dependencies (RustSec)
+        uses: actions-rust-lang/audit@v1

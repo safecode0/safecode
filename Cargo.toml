@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ferrous",
+    "crates/shared",
+    "crates/wasi-runtime",
+    "crates/context-index",
+    "crates/agent-loop",
+    "crates/router",
+    "crates/model-client",
+    "crates/profiles-vault",
+    "crates/search",
+    "crates/services",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+# Provisional dual-license (commercial vs open source is undecided — see README).
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+# NOTE: never enable secrecy's `serde` feature — its `Serialize` impl emits the
+# plaintext (expose_secret) for sized wrappers. No secret type must be serializable;
+# secrets leave the crate only via an explicit `expose_secret()` boundary.
+secrecy = "0.10"
+criterion = "0.5"
+wasmtime = { version = "47.0.3", default-features = false, features = ["async", "component-model", "component-model-async", "cranelift", "runtime", "std", "wit-parser"] }
+wasmtime-wasi = { version = "47.0.3", default-features = false, features = ["p2"] }
+wat = "1"
+portable-pty = "0.9"
+sha2 = "0.10"
+tungstenite = "0.30"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# priority -1 lets the restriction lints below override the group.
+all = { level = "warn", priority = -1 }
+# Restriction lints: enforce the error-handling convention mechanically. Test code
+# opts out per-file with `#![allow(clippy::unwrap_used, ...)]`.
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[profile.release]
+lto = "thin" # thin LTO: best starting point (near-fat runtime, much faster builds)
+codegen-units = 1
+strip = "symbols"
+panic = "abort" # smaller/faster release binaries; no unwinding machinery
+
+# Benches are only compile-gated in CI (`cargo bench --no-run`) — keep them fast to
+# build. Revisit when real benchmarks land (Phase 1+).
+[profile.bench]
+codegen-units = 16
+lto = false
+
+# Keep full debug info for Ferrous code; build dependencies without debug info.
+[profile.dev.package."*"]
+debug = 0
